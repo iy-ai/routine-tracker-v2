@@ -415,9 +415,12 @@ async function handleLogout() {
 async function loadFromSupabase() {
   if (!currentUser) return;
   try {
-    const { data } = await sb.from('user_checks').select('checks').eq('user_id', currentUser.id).maybeSingle();
+    const { data } = await Promise.race([
+      sb.from('user_checks').select('checks').eq('user_id', currentUser.id).maybeSingle(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('db_timeout')), 4000))
+    ]);
     if (data && data.checks) checkData = data.checks;
-  } catch(e) { console.warn('データ読込エラー:', e); }
+  } catch(e) { console.warn('データ読込スキップ:', e.message); }
 }
 
 async function saveToSupabase() {
