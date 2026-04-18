@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoutineOS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Hiragino Sans', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  /* ─── ローディング ─── */
+  #loadingOverlay { position: fixed; inset: 0; background: #0f1117; display: flex; align-items: center; justify-content: center; z-index: 9999; flex-direction: column; gap: 16px; }
+  .loading-spinner { width: 40px; height: 40px; border: 3px solid #2d3561; border-top-color: #7c83fd; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── ログイン画面 ─── */
+  #loginScreen { display: none; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  #loginScreen.active { display: flex; }
+  .login-card { background: linear-gradient(135deg, #1e2235, #252a3d); border: 1px solid #2d3561; border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 400px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+  .login-logo { font-size: 1.6rem; font-weight: 800; background: linear-gradient(90deg, #7c83fd, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; }
+  .login-sub { font-size: 0.8rem; color: #64748b; margin-bottom: 32px; }
+  .login-tab { display: flex; border-bottom: 1px solid #2d3561; margin-bottom: 24px; }
+  .login-tab-btn { flex: 1; padding: 10px; font-size: 0.85rem; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; text-align: center; }
+  .login-tab-btn.active { color: #7c83fd; border-bottom-color: #7c83fd; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }
+  .form-group input { width: 100%; padding: 12px 14px; background: #0f1117; border: 1px solid #2d3561; border-radius: 10px; color: #e2e8f0; font-size: 0.9rem; outline: none; transition: border 0.2s; }
+  .form-group input:focus { border-color: #7c83fd; }
+  .btn-primary { width: 100%; padding: 13px; background: linear-gradient(135deg, #7c83fd, #a78bfa); border: none; border-radius: 10px; color: white; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: opacity 0.2s; margin-top: 6px; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 8px; padding: 10px 14px; font-size: 0.8rem; color: #fca5a5; margin-bottom: 14px; display: none; }
+  .msg-ok    { background: rgba(85,239,196,0.1); border: 1px solid rgba(85,239,196,0.3); border-radius: 8px; padding: 10px 14px; font-size: 0.8rem; color: #55efc4; margin-bottom: 14px; display: none; }
+
+  /* ─── メインアプリ ─── */
+  #mainApp { display: none; }
+  #mainApp.active { display: block; }
+
+  .topbar { background: linear-gradient(135deg, #1a1d2e 0%, #16213e 100%); padding: 16px 28px; border-bottom: 1px solid #2d3561; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .logo { font-size: 1.3rem; font-weight: 800; background: linear-gradient(90deg, #7c83fd, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo-sub { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+  .user-area { display: flex; align-items: center; gap: 12px; }
+  .user-email-label { font-size: 0.75rem; color: #64748b; }
+  .btn-logout { padding: 6px 16px; background: transparent; border: 1px solid #2d3561; border-radius: 20px; color: #94a3b8; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; }
+  .btn-logout:hover { border-color: #7c83fd; color: #7c83fd; }
+  .sync-status { font-size: 0.72rem; color: #55efc4; opacity: 0; transition: opacity 0.5s; }
+  .sync-status.show { opacity: 1; }
+
+  /* ─── ダッシュボード ─── */
+  .dashboard { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; padding: 20px 28px 0; }
+  .stat-card { background: linear-gradient(135deg, #1e2235, #252a3d); border: 1px solid #2d3561; border-radius: 14px; padding: 16px; text-align: center; transition: transform 0.2s; }
+  .stat-card:hover { transform: translateY(-2px); }
+  .stat-card .icon { font-size: 1.6rem; margin-bottom: 6px; }
+  .stat-card .label { font-size: 0.72rem; color: #64748b; letter-spacing: 0.04em; }
+  .stat-card .value { font-size: 1.8rem; font-weight: 800; margin: 4px 0; }
+  .stat-card .sub { font-size: 0.7rem; color: #64748b; }
+  .fire { color: #ff9f43; } .green { color: #55efc4; } .purple { color: #a78bfa; }
+
+  .ring-wrap { position: relative; width: 60px; height: 60px; margin: 0 auto 4px; }
+  .ring-wrap svg { transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: #2d3561; stroke-width: 6; }
+  .ring-fill { fill: none; stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.8s ease; }
+
+  /* ─── コンテンツ ─── */
+  .content { padding: 20px 28px; }
+  .section-title { font-size: 0.82rem; color: #94a3b8; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 12px; text-transform: uppercase; }
+
+  .tabs { display: flex; margin-bottom: 16px; border-bottom: 1px solid #2d3561; }
+  .tab { padding: 10px 22px; font-size: 0.82rem; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; font-weight: 600; }
+  .tab.active { color: #7c83fd; border-bottom-color: #7c83fd; }
+
+  .month-nav-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .month-nav-row button { background: #1e2235; border: 1px solid #2d3561; color: #94a3b8; width: 30px; height: 30px; border-radius: 50%; font-size: 0.9rem; cursor: pointer; }
+  .month-nav-row button:hover { background: #2d3561; }
+  .month-nav-row span { font-size: 1rem; font-weight: 700; color: #e2e8f0; }
+
+  /* ─── タイミングバッジ ─── */
+  .timing-badge { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; border-radius: 20px; font-size: 0.68rem; font-weight: 700; white-space: nowrap; }
+  .timing-朝     { background: rgba(124,131,253,0.2); color: #7c83fd; border: 1px solid rgba(124,131,253,0.4); }
+  .timing-日中   { background: rgba(255,211,42,0.15); color: #ffd32a; border: 1px solid rgba(255,211,42,0.35); }
+  .timing-睡眠前 { background: rgba(167,139,250,0.2); color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); }
+
+  /* ─── ヒートマップ ─── */
+  .heatmap-view { display: none; }
+  .heatmap-view.active { display: block; }
+  .heatmap-grid { display: grid; gap: 4px; }
+  .heatmap-row { display: flex; gap: 6px; align-items: center; }
+  .heatmap-timing-col { width: 62px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .heatmap-label { font-size: 0.78rem; color: #cbd5e0; width: 195px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+  .heatmap-cells { display: flex; gap: 4px; overflow-x: auto; }
+  .heatmap-cell { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; flex-shrink: 0; transition: transform 0.1s; }
+  .heatmap-cell:hover { transform: scale(1.3); z-index: 10; position: relative; }
+  .heatmap-cell.level-0 { background: #1e2235; border: 1px solid #2d3561; }
+  .heatmap-cell.level-4 { background: #55efc4; }
+  .heatmap-cell.future  { background: #161928; opacity: 0.4; cursor: default; }
+  .heatmap-cell.today-ring { outline: 2px solid #7c83fd; outline-offset: 1px; }
+
+  .date-header-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  .date-header-spacer { width: 263px; flex-shrink: 0; }
+  .date-header-cells { display: flex; gap: 4px; }
+  .date-header-item { width: 22px; font-size: 0.6rem; color: #4a5568; text-align: center; flex-shrink: 0; line-height: 1.5; }
+  .date-header-item.today-h { color: #7c83fd; font-weight: 700; }
+  .dow { display: block; font-size: 0.58rem; }
+  .dow.sun { color: #e17055; }
+  .dow.sat { color: #74b9ff; }
+  .date-header-item.today-h .dow { color: #7c83fd; }
+
+  .category-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; }
+  .category-divider-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; color: #94a3b8; }
+  .category-divider-line { flex: 1; height: 1px; background: #2d3561; }
+
+  .legend { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.72rem; color: #64748b; flex-wrap: wrap; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+  /* ─── テーブル ─── */
+  .table-view { display: none; }
+  .table-view.active { display: block; }
+  table.rich-table { border-collapse: collapse; background: #1a1d2e; border-radius: 12px; overflow: hidden; width: 100%; min-width: 650px; }
+  .rich-table th { background: #1e2235; font-size: 0.72rem; color: #64748b; padding: 10px 8px; font-weight: 600; border-bottom: 1px solid #2d3561; white-space: nowrap; }
+  .rich-table td { border: 1px solid #1e2744; text-align: center; padding: 0; vertical-align: middle; }
+  .rich-table .r-timing { text-align: center; padding: 6px 8px !important; background: #1e2235; position: sticky; left: 0; width: 68px; min-width: 68px; border-right: 1px solid #2d3561 !important; z-index: 2; }
+  .rich-table .r-label  { text-align: left; padding: 8px 12px !important; font-size: 0.8rem; color: #cbd5e0; background: #1e2235; position: sticky; left: 68px; min-width: 200px; border-right: 1px solid #2d3561 !important; z-index: 2; }
+  .rich-table .cat-row td { background: #16213e; color: #94a3b8; font-size: 0.73rem; font-weight: 700; padding: 7px 14px !important; text-align: left; position: sticky; left: 0; border-bottom: 1px solid #2d3561; z-index: 3; }
+  .rich-check { width: 32px; min-width: 32px; height: 38px; cursor: pointer; transition: background 0.15s; }
+  .rich-check:hover   { background: #2d3561; }
+  .rich-check.checked { background: #1a3a2a; }
+  .rich-check.today-c { background: #1e2744; }
+  .rich-check.today-c.checked { background: #1a3a2a; }
+  .rich-check.future  { opacity: 0.3; cursor: default; }
+  .rich-check .ci::before         { content: '○'; color: #3a4a6b; font-size: 0.85rem; }
+  .rich-check.checked .ci::before { content: '✓'; color: #55efc4; font-weight: 700; font-size: 1rem; }
+  .rich-check.future  .ci::before { content: '·'; color: #3a4a6b; }
+
+  /* ─── 週間バー ─── */
+  .week-progress { margin-bottom: 24px; }
+  .week-day-bars { display: flex; gap: 6px; align-items: flex-end; height: 80px; }
+  .week-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+  .week-bar-bg { width: 100%; background: #1e2235; border-radius: 6px 6px 0 0; display: flex; align-items: flex-end; overflow: hidden; height: 70px; }
+  .week-bar-fill { width: 100%; background: linear-gradient(180deg, #7c83fd, #a78bfa); border-radius: 6px 6px 0 0; transition: height 0.8s ease; min-height: 4px; }
+  .week-bar-fill.today-bar { background: linear-gradient(180deg, #55efc4, #00b894); }
+  .week-bar-label { font-size: 0.65rem; color: #64748b; }
+  .week-bar-val   { font-size: 0.65rem; color: #94a3b8; }
+
+  .tooltip { position: fixed; background: #1e2235; border: 1px solid #2d3561; border-radius: 8px; padding: 8px 12px; font-size: 0.75rem; color: #e2e8f0; pointer-events: none; z-index: 1000; display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  .footer { text-align: center; padding: 24px; font-size: 0.72rem; color: #3a4a6b; }
+</style>
+</head>
+<body>
+
+<!-- ローディング -->
+<div id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div style="font-size:0.8rem;color:#64748b;">読み込み中...</div>
+</div>
+
+<!-- ログイン画面 -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">✦ RoutineOS</div>
+    <div class="login-sub">10年後の自分をつくる、毎日の習慣管理</div>
+    <div class="login-tab">
+      <div class="login-tab-btn active" id="tabLogin"  onclick="switchLoginTab('login')">ログイン</div>
+      <div class="login-tab-btn"        id="tabSignup" onclick="switchLoginTab('signup')">新規登録</div>
+    </div>
+    <div class="msg-error" id="msgError"></div>
+    <div class="msg-ok"    id="msgOk"></div>
+    <div class="form-group"><label>メールアドレス</label><input type="email"    id="emailInput"    placeholder="example@gmail.com" /></div>
+    <div class="form-group"><label>パスワード</label>    <input type="password" id="passwordInput" placeholder="6文字以上" /></div>
+    <button class="btn-primary" id="authBtn" onclick="handleAuth()">ログイン</button>
+  </div>
+</div>
+
+<!-- メインアプリ -->
+<div id="mainApp">
+  <div class="topbar">
+    <div><div class="logo">✦ RoutineOS</div><div class="logo-sub">10年後の自分をつくる、毎日の習慣管理</div></div>
+    <div class="user-area">
+      <span class="sync-status" id="syncStatus">☁️ 保存しました</span>
+      <span class="user-email-label" id="userEmailLabel"></span>
+      <button class="btn-logout" onclick="handleLogout()">ログアウト</button>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="stat-card">
+      <div class="icon">🔥</div><div class="label">連続達成</div>
+      <div class="value fire" id="d-streak">0<span style="font-size:1rem">日</span></div>
+      <div class="sub">ストリーク</div>
+    </div>
+    <div class="stat-card">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 60 60" width="60" height="60">
+          <circle class="ring-bg" cx="30" cy="30" r="24"/>
+          <circle class="ring-fill" cx="30" cy="30" r="24" id="todayRing" stroke="#7c83fd" stroke-dasharray="150.8" stroke-dashoffset="150.8"/>
+        </svg>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:0.8rem;font-weight:800;color:#7c83fd" id="d-today-pct">0%</div>
+      </div>
+      <div class="label">今日の達成率</div><div class="sub" id="d-today-frac">0/11 完了</div>
+    </div>
+    <div class="stat-card">
+      <div class="icon">📅</div><div class="label">今月の達成率</div>
+      <div class="value green" id="d-month-rate">－</div><div class="sub">月間パフォーマンス</div>
+    </div>
+    <div class="stat-card">
+      <div class="icon">⚠️</div><div class="label">今週の弱点</div>
+      <div class="value purple" style="font-size:0.82rem;line-height:1.3" id="d-weak">－</div>
+      <div class="sub">改善ポイント</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="week-progress">
+      <div class="section-title">今週の達成状況</div>
+      <div class="week-day-bars" id="weekBars"></div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('heatmap',this)">🗓 ヒートマップ</div>
+      <div class="tab"        onclick="switchTab('table',this)">📋 テーブル</div>
+    </div>
+
+    <div class="month-nav-row">
+      <button onclick="changeMonth(-1)">◀</button>
+      <span id="monthLabel">－</span>
+      <button onclick="changeMonth(1)">▶</button>
+    </div>
+
+    <div class="heatmap-view active" id="heatmapView">
+      <div class="section-title">ルーティン別 達成ヒートマップ</div>
+      <div class="date-header-row">
+        <div class="date-header-spacer"></div>
+        <div class="date-header-cells" id="dateHeader"></div>
+      </div>
+      <div class="heatmap-grid" id="heatmapGrid"></div>
+      <div class="legend">
+        <span>達成：</span>
+        <div class="legend-swatch" style="background:#1e2235;border:1px solid #2d3561;"></div><span>未</span>
+        <div class="legend-swatch" style="background:#55efc4;"></div><span>済</span>
+        <span style="margin-left:10px;">タイミング：</span>
+        <span class="timing-badge timing-朝">朝</span>
+        <span class="timing-badge timing-日中">日中</span>
+        <span class="timing-badge timing-睡眠前">睡眠前</span>
+      </div>
+    </div>
+
+    <div class="table-view" id="tableView">
+      <div class="section-title">チェックテーブル</div>
+      <div style="overflow-x:auto;">
+        <table class="rich-table"><thead id="richHead"></thead><tbody id="richBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+  <div class="footer">データはSupabaseクラウドに保存 · RoutineOS v3.1</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ════════════════════════════════════════
+//  設定
+// ════════════════════════════════════════
+const SUPABASE_URL = 'https://wzwsfoluztgqbflzpyot.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6d3Nmb2x1enRncWJmbHpweW90Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0ODI1NjcsImV4cCI6MjA5MjA1ODU2N30.3wWYOgrfyN0GlQM5fRr7RQMO4kLqGas4_VOP0JWgVCc';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const ROUTINES = [
+  { category: '🌄 朝のルーティン', timing: '朝', items: [
+    'スケジュール・タスク・メールチェック',
+    '週末の予定',
+    'ランニング30〜40分（5:30起床目標）',
+    'アプリ・ブログ作成',
+    '試験勉強（簿記3級など）',
+  ]},
+  { category: '🌞 日中のルーティン', timing: '日中', items: [
+    '腕・肩甲骨まわし（肘から回す）',
+    '左腕を重点的に回す',
+  ]},
+  { category: '🌙 睡眠前ルーティン', timing: '睡眠前', items: [
+    '7時間睡眠の確保',
+    '寝る前に深呼吸・体の脱力',
+    '仰向けで就寝',
+    '翌朝の準備（ランニング服・靴下・ティッシュ・Bluetoothイヤホン・ポケットタオル・パックごはん）',
+  ]},
+];
+
+const DAYS_JP = ['日','月','火','水','木','金','土'];
+let currentYear, currentMonth;
+let checkData = {};
+let currentUser = null;
+let saveTimer   = null;
+
+// ════════════════════════════════════════
+//  画面切替
+// ════════════════════════════════════════
+function showLoading(v) { document.getElementById('loadingOverlay').style.display = v ? 'flex' : 'none'; }
+function showLogin()    { document.getElementById('loginScreen').classList.add('active'); document.getElementById('mainApp').classList.remove('active'); }
+function showApp()      { document.getElementById('loginScreen').classList.remove('active'); document.getElementById('mainApp').classList.add('active'); }
+
+// ════════════════════════════════════════
+//  起動：まず既存セッションを確認
+// ════════════════════════════════════════
+(async () => {
+  showLoading(true);
+  // 5秒でタイムアウト→必ずログイン画面を表示
+  const timer = setTimeout(() => { showLoading(false); showLogin(); }, 5000);
+  try {
+    const result = await Promise.race([
+      sb.auth.getSession(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4500))
+    ]);
+    clearTimeout(timer);
+    const session = result.data ? result.data.session : null;
+    if (session) {
+      currentUser = session.user;
+      document.getElementById('userEmailLabel').textContent = currentUser.email;
+      await loadFromSupabase();
+      showApp();
+      initApp();
+    } else {
+      showLogin();
+    }
+  } catch(e) {
+    clearTimeout(timer);
+    showLogin();
+  } finally {
+    showLoading(false);
+  }
+})();
+
+// 以降のログイン/ログアウトを監視
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN' && session && !currentUser) {
+    showLoading(true);
+    currentUser = session.user;
+    document.getElementById('userEmailLabel').textContent = currentUser.email;
+    await loadFromSupabase();
+    showApp();
+    initApp();
+    showLoading(false);
+  } else if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    checkData   = {};
+    showLogin();
+  }
+});
+
+// ════════════════════════════════════════
+//  認証 UI
+// ════════════════════════════════════════
+let loginMode = 'login';
+function switchLoginTab(mode) {
+  loginMode = mode;
+  document.getElementById('tabLogin').classList.toggle('active',  mode === 'login');
+  document.getElementById('tabSignup').classList.toggle('active', mode === 'signup');
+  document.getElementById('authBtn').textContent = mode === 'login' ? 'ログイン' : '新規登録';
+  document.getElementById('msgError').style.display = 'none';
+  document.getElementById('msgOk').style.display    = 'none';
+}
+
+async function handleAuth() {
+  const email = document.getElementById('emailInput').value.trim();
+  const pass  = document.getElementById('passwordInput').value;
+  const btn   = document.getElementById('authBtn');
+  document.getElementById('msgError').style.display = 'none';
+  document.getElementById('msgOk').style.display    = 'none';
+  if (!email || !pass) { showErr('メールアドレスとパスワードを入力してください'); return; }
+  btn.disabled = true; btn.textContent = '処理中...';
+
+  if (loginMode === 'login') {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (error) {
+      showErr('ログイン失敗：' + error.message);
+      btn.disabled = false; btn.textContent = 'ログイン';
+    } else if (data && data.session) {
+      // ログイン成功→直接画面切替
+      currentUser = data.session.user;
+      document.getElementById('userEmailLabel').textContent = currentUser.email;
+      await loadFromSupabase();
+      showApp();
+      initApp();
+      return; // ボタン復元不要
+    }
+  } else {
+    const { data, error } = await sb.auth.signUp({ email, password: pass });
+    if (error) {
+      showErr('登録失敗：' + error.message);
+    } else if (data && data.session) {
+      // メール確認不要の場合はそのままログイン
+      currentUser = data.session.user;
+      document.getElementById('userEmailLabel').textContent = currentUser.email;
+      await loadFromSupabase();
+      showApp();
+      initApp();
+      return;
+    } else {
+      const el = document.getElementById('msgOk');
+      el.textContent = '登録しました。ログインタブからログインしてください。';
+      el.style.display = 'block';
+    }
+  }
+  btn.disabled = false; btn.textContent = loginMode === 'login' ? 'ログイン' : '新規登録';
+}
+
+function showErr(msg) { const el = document.getElementById('msgError'); el.textContent = msg; el.style.display = 'block'; }
+document.addEventListener('keydown', e => { if (e.key === 'Enter') handleAuth(); });
+
+async function handleLogout() {
+  await sb.auth.signOut();
+}
+
+// ════════════════════════════════════════
+//  Supabase データ
+// ════════════════════════════════════════
+async function loadFromSupabase() {
+  if (!currentUser) return;
+  try {
+    const { data } = await sb.from('user_checks').select('checks').eq('user_id', currentUser.id).maybeSingle();
+    if (data && data.checks) checkData = data.checks;
+  } catch(e) { console.warn('データ読込エラー:', e); }
+}
+
+async function saveToSupabase() {
+  if (!currentUser) return;
+  try {
+    await sb.from('user_checks').upsert({ user_id: currentUser.id, checks: checkData, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    flashSync('☁️ 保存しました', false);
+  } catch(e) { flashSync('⚠️ 保存失敗', true); }
+}
+
+function flashSync(msg, isErr) {
+  const el = document.getElementById('syncStatus');
+  el.textContent = msg;
+  el.style.color = isErr ? '#fca5a5' : '#55efc4';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToSupabase, 800);
+}
+
+// ════════════════════════════════════════
+//  アプリ初期化
+// ════════════════════════════════════════
+function initApp() {
+  const now    = new Date();
+  currentYear  = now.getFullYear();
+  currentMonth = now.getMonth();
+  document.getElementById('monthLabel').textContent = currentYear + '年 ' + (currentMonth + 1) + '月';
+  buildHeatmap();
+  updateDashboard();
+}
+
+// ════════════════════════════════════════
+//  ユーティリティ
+// ════════════════════════════════════════
+function getToday() {
+  const t = new Date();
+  return t.getFullYear() + '-' + pad(t.getMonth()+1) + '-' + pad(t.getDate());
+}
+function fmtDate(d) { return currentYear + '-' + pad(currentMonth+1) + '-' + pad(d); }
+function pad(n)     { return String(n).padStart(2,'0'); }
+function esc(s)     { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('heatmapView').classList.toggle('active', tab === 'heatmap');
+  document.getElementById('tableView').classList.toggle('active',  tab === 'table');
+  if (tab === 'table') buildTable();
+}
+
+// ════════════════════════════════════════
+//  ヒートマップ
+// ════════════════════════════════════════
+function buildHeatmap() {
+  const todayStr    = getToday();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+  // 日付ヘッダー（日付＋曜日）
+  let dh = '';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds  = fmtDate(d);
+    const dow = new Date(currentYear, currentMonth, d).getDay();
+    const dowClass = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
+    dh += '<div class="date-header-item' + (ds === todayStr ? ' today-h' : '') + '">'
+       + d + '<span class="dow ' + dowClass + '">' + DAYS_JP[dow] + '</span></div>';
+  }
+  document.getElementById('dateHeader').innerHTML = dh;
+
+  // グリッド
+  let html = '';
+  ROUTINES.forEach(function(cat) {
+    html += '<div class="category-divider"><span class="category-divider-label">' + cat.category + '</span><div class="category-divider-line"></div></div>';
+    cat.items.forEach(function(item) {
+      html += '<div class="heatmap-row">'
+           + '<div class="heatmap-timing-col"><span class="timing-badge timing-' + cat.timing + '">' + cat.timing + '</span></div>'
+           + '<div class="heatmap-label" title="' + item + '">' + item + '</div>'
+           + '<div class="heatmap-cells">';
+      for (let d = 1; d <= daysInMonth; d++) {
+        const ds        = fmtDate(d);
+        const isFuture  = ds > todayStr;
+        const isToday   = ds === todayStr;
+        const isChecked = checkData[ds] && checkData[ds][item];
+        const cls = 'heatmap-cell'
+          + (isFuture ? ' future' : (isChecked ? ' level-4' : ' level-0'))
+          + (isToday  ? ' today-ring' : '');
+        const tip     = ds + '【' + cat.timing + '】' + item + '：' + (isChecked ? '✓ 達成' : (isFuture ? '未来' : '未達成'));
+        const onclick = isFuture ? '' : "toggleHeatmap('" + ds + "','" + esc(item) + "',this)";
+        html += '<div class="' + cls + '" onclick="' + onclick + '" data-tip="' + tip + '"></div>';
+      }
+      html += '</div></div>';
+    });
+  });
+  document.getElementById('heatmapGrid').innerHTML = html;
+
+  // ツールチップ
+  document.querySelectorAll('.heatmap-cell').forEach(function(c) {
+    c.addEventListener('mouseenter', function(e) {
+      var tip = document.getElementById('tooltip');
+      tip.textContent = c.getAttribute('data-tip');
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top  = (e.clientY - 36) + 'px';
+    });
+    c.addEventListener('mousemove', function(e) {
+      var tip = document.getElementById('tooltip');
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top  = (e.clientY - 36) + 'px';
+    });
+    c.addEventListener('mouseleave', function() { document.getElementById('tooltip').style.display = 'none'; });
+  });
+}
+
+function toggleHeatmap(ds, item, cell) {
+  if (!checkData[ds]) checkData[ds] = {};
+  checkData[ds][item] = !checkData[ds][item];
+  cell.classList.toggle('level-4', !!checkData[ds][item]);
+  cell.classList.toggle('level-0', !checkData[ds][item]);
+  scheduleSave();
+  updateDashboard();
+}
+
+// ════════════════════════════════════════
+//  テーブル
+// ════════════════════════════════════════
+function buildTable() {
+  const todayStr    = getToday();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+  var headHTML = '<tr><th style="position:sticky;left:0;z-index:4;background:#1e2235;min-width:68px;">タイミング</th>'
+               + '<th style="position:sticky;left:68px;z-index:4;background:#1e2235;min-width:200px;text-align:left;">ルーティン</th>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds  = fmtDate(d);
+    const dow = new Date(currentYear, currentMonth, d).getDay();
+    headHTML += '<th style="min-width:30px;' + (ds === todayStr ? 'color:#7c83fd' : '') + '">'
+             + d + '<br><span style="font-size:0.6rem">' + DAYS_JP[dow] + '</span></th>';
+  }
+  headHTML += '</tr>';
+  document.getElementById('richHead').innerHTML = headHTML;
+
+  var bodyHTML = '';
+  ROUTINES.forEach(function(cat) {
+    bodyHTML += '<tr class="cat-row"><td colspan="' + (daysInMonth + 2) + '">' + cat.category + '</td></tr>';
+    cat.items.forEach(function(item) {
+      bodyHTML += '<tr>'
+               + '<td class="r-timing"><span class="timing-badge timing-' + cat.timing + '">' + cat.timing + '</span></td>'
+               + '<td class="r-label">' + item + '</td>';
+      for (let d = 1; d <= daysInMonth; d++) {
+        const ds        = fmtDate(d);
+        const isFuture  = ds > todayStr;
+        const isToday   = ds === todayStr;
+        const isChecked = checkData[ds] && checkData[ds][item];
+        const cls    = 'rich-check' + (isToday ? ' today-c' : '') + (isFuture ? ' future' : '') + (isChecked ? ' checked' : '');
+        const onclick = isFuture ? '' : "toggleTable('" + ds + "','" + esc(item) + "',this)";
+        bodyHTML += '<td class="' + cls + '" onclick="' + onclick + '"><span class="ci"></span></td>';
+      }
+      bodyHTML += '</tr>';
+    });
+  });
+  document.getElementById('richBody').innerHTML = bodyHTML;
+}
+
+function toggleTable(ds, item, cell) {
+  if (!checkData[ds]) checkData[ds] = {};
+  checkData[ds][item] = !checkData[ds][item];
+  cell.classList.toggle('checked', !!checkData[ds][item]);
+  scheduleSave();
+  updateDashboard();
+}
+
+// ════════════════════════════════════════
+//  ダッシュボード
+// ════════════════════════════════════════
+function updateDashboard() {
+  const todayStr    = getToday();
+  const allItems    = ROUTINES.reduce(function(a, c){ return a.concat(c.items); }, []);
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+  // 今日
+  const todayData    = checkData[todayStr] || {};
+  const todayChecked = allItems.filter(function(i){ return todayData[i]; }).length;
+  const todayPct     = Math.round(todayChecked / allItems.length * 100);
+  document.getElementById('d-today-pct').textContent  = todayPct + '%';
+  document.getElementById('d-today-frac').textContent = todayChecked + '/' + allItems.length + ' 完了';
+  const circ = 150.8;
+  document.getElementById('todayRing').style.strokeDashoffset = circ - circ * todayPct / 100;
+
+  // 月間
+  var total = 0, done = 0;
+  for (var d = 1; d <= daysInMonth; d++) {
+    const ds = fmtDate(d);
+    if (ds > todayStr) continue;
+    allItems.forEach(function(i){ total++; if (checkData[ds] && checkData[ds][i]) done++; });
+  }
+  document.getElementById('d-month-rate').textContent = total > 0 ? Math.round(done / total * 100) + '%' : '－';
+
+  // ストリーク
+  var streak = 0, dd = new Date();
+  while (streak <= 365) {
+    const ds2 = dd.getFullYear() + '-' + pad(dd.getMonth()+1) + '-' + pad(dd.getDate());
+    if (ds2 > todayStr) { dd.setDate(dd.getDate()-1); continue; }
+    const dayObj = checkData[ds2] || {};
+    if (!allItems.some(function(i){ return dayObj[i]; })) break;
+    streak++; dd.setDate(dd.getDate()-1);
+  }
+  document.getElementById('d-streak').innerHTML = streak + '<span style="font-size:1rem">日</span>';
+
+  // 弱点
+  var scores = {};
+  allItems.forEach(function(item){ scores[item] = { done: 0, total: 0 }; });
+  for (var d2 = 1; d2 <= daysInMonth; d2++) {
+    const ds3 = fmtDate(d2);
+    if (ds3 > todayStr) continue;
+    allItems.forEach(function(i){ scores[i].total++; if (checkData[ds3] && checkData[ds3][i]) scores[i].done++; });
+  }
+  var weakest = allItems.reduce(function(a, b){
+    var ra = scores[a].total ? scores[a].done / scores[a].total : 1;
+    var rb = scores[b].total ? scores[b].done / scores[b].total : 1;
+    return ra <= rb ? a : b;
+  });
+  var weakRate = scores[weakest].total ? Math.round(scores[weakest].done / scores[weakest].total * 100) : 0;
+  document.getElementById('d-weak').textContent = weakest.substring(0, 10) + '…(' + weakRate + '%)';
+
+  buildWeekBars();
+}
+
+function buildWeekBars() {
+  const today    = new Date(), todayStr = getToday();
+  const allItems = ROUTINES.reduce(function(a, c){ return a.concat(c.items); }, []);
+  var html = '';
+  for (var i = 0; i < 7; i++) {
+    var d3 = new Date(today); d3.setDate(today.getDate() - today.getDay() + i);
+    const ds4      = d3.getFullYear() + '-' + pad(d3.getMonth()+1) + '-' + pad(d3.getDate());
+    const isFuture = ds4 > todayStr, isToday = ds4 === todayStr;
+    var pct = 0;
+    if (!isFuture) {
+      var cnt = allItems.filter(function(i2){ return checkData[ds4] && checkData[ds4][i2]; }).length;
+      pct = Math.round(cnt / allItems.length * 100);
+    }
+    var barH = isFuture ? 4 : Math.max(4, pct * 0.7);
+    html += '<div class="week-bar-wrap">'
+          + '<div class="week-bar-val">' + (isFuture ? '' : pct + '%') + '</div>'
+          + '<div class="week-bar-bg"><div class="week-bar-fill' + (isToday ? ' today-bar' : '') + '" style="height:' + barH + 'px"></div></div>'
+          + '<div class="week-bar-label" style="' + (isToday ? 'color:#7c83fd;font-weight:700' : '') + '">' + DAYS_JP[d3.getDay()] + '</div>'
+          + '</div>';
+  }
+  document.getElementById('weekBars').innerHTML = html;
+}
+
+function changeMonth(delta) {
+  currentMonth += delta;
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  if (currentMonth <  0) { currentMonth = 11; currentYear--; }
+  document.getElementById('monthLabel').textContent = currentYear + '年 ' + (currentMonth + 1) + '月';
+  buildHeatmap();
+  if (document.getElementById('tableView').classList.contains('active')) buildTable();
+}
+</script>
+</body>
+</html>
